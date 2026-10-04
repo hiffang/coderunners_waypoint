@@ -30,6 +30,8 @@ import {
 } from "./lib/masters";
 
 const db = new PrismaClient({ adapter: new PrismaPg({ connectionString: process.env.DATABASE_URL }) });
+// Seeding a remote DB (e.g. Neon) pays a network round-trip per query; the 5 s default is too short.
+const SEED_TX = { timeout: 60_000, maxWait: 20_000 };
 const DATA_DIR = path.resolve(process.cwd(), "data/general");
 
 export const DEPOT_IDS = { Peliyagoda: "depot-peliyagoda", Kandy: "depot-kandy" } as const;
@@ -398,7 +400,7 @@ async function seedScenario(serviceDate: string, calendar: CalendarRecord[]) {
       await tx.auditLog.create({
         data: { actorId: users.dispatcher.id, action: "plan.publish", entityType: "Plan", entityId: plan.id, after: { revision: 1, seeded: true }, planRevision: 1 },
       });
-    });
+    }, SEED_TX);
     console.log(`scenario: published plan for ${prev} with deferral and loading shortfall`);
   }
 
@@ -415,6 +417,7 @@ async function seedScenario(serviceDate: string, calendar: CalendarRecord[]) {
         submittedAt,
         status: "CONFIRMED",
       }),
+      SEED_TX,
     );
     created++;
   }
