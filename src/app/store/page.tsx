@@ -1,6 +1,8 @@
 import type { Metadata } from "next";
-import { OrderList } from "@/features/store/components/order-list";
-export const metadata: Metadata = { title: "Orders" };
-export default function Page() {
-  return <OrderList />;
+import { NotBuilt } from "@/components/not-built";
+
+export const metadata: Metadata = { title: "Store" };
+
+export default function StoreHome() {
+  return <NotBuilt portal="Store" owner="see src/app/store/CLAUDE.md" />;
 }

@@ -4,5 +4,4 @@ export const storeNav: NavItem[] = [
   { href: "/store", label: "Orders", exact: true },
   { href: "/store/deliveries", label: "Deliveries" },
   { href: "/store/receipts", label: "Receipts" },
-  { href: "/store/issues", label: "Issues" },
 ];
