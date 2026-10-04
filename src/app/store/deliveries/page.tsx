@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import { OrderList } from "@/features/store/components/order-list";
-export const metadata: Metadata = { title: "Orders" };
+export const metadata: Metadata = { title: "Deliveries" };
 export default function Page() {
-  return <OrderList />;
+  return <OrderList mode="deliveries" />;
 }
