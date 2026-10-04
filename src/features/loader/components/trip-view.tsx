@@ -7,7 +7,7 @@ import { ArrowDownToLine, ArrowLeft, CheckCircle2, CircleAlert, History, Play, R
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
-import { Skeleton } from "@/components/ui/skeleton";
+import { LoadingScreen } from "@/components/loading-screen";
 import { OfflineStorageError, useNavigatorOnline } from "@/lib/offline";
 import { cn } from "@/lib/utils";
 import { ApiClientError } from "@/shared/api";
@@ -37,8 +37,7 @@ export function TripView({ tripId }: { tripId: string }) {
   if (manifest === undefined || (manifest === null && refresh.isPending && online)) {
     return (
       <div className="mx-auto max-w-3xl space-y-3">
-        <Skeleton className="h-24 w-full rounded-2xl" />
-        <Skeleton className="h-64 w-full rounded-2xl" />
+        <LoadingScreen portal="loader" title="Loading your manifest" />
       </div>
     );
   }

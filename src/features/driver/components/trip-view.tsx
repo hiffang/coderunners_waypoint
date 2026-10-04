@@ -5,7 +5,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { ArrowLeft, Clock, Home, MapPin, PlayCircle, TriangleAlert } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Skeleton } from "@/components/ui/skeleton";
+import { LoadingScreen } from "@/components/loading-screen";
 import { OfflineStorageError, useNavigatorOnline } from "@/lib/offline";
 import { cn } from "@/lib/utils";
 import { ApiClientError } from "@/shared/api";
@@ -31,7 +31,7 @@ export function TripView({ tripId }: { tripId: string }) {
       {revoked && <RevokedBanner message={revoked.message} />}
       <RefreshError error={revoked ? null : refresh.error} />
       {trip === undefined || (trip === null && refresh.isFetching) ? (
-        <Skeleton className="h-48 w-full rounded-2xl" />
+        <LoadingScreen portal="driver" title="Loading your trip" />
       ) : trip === null ? (
         <NoRouteDownloaded />
       ) : (

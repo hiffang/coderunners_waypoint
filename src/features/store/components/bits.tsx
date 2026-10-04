@@ -5,7 +5,7 @@ import { AlertCircle, PackageOpen, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
-import { Skeleton } from "@/components/ui/skeleton";
+import { LoadingScreen } from "@/components/loading-screen";
 import type { OrderDto } from "@/shared/dto/order";
 
 export const label = (value: string) =>
@@ -82,13 +82,7 @@ export function Failure({ error, retry }: { error: Error; retry: () => void }) {
   );
 }
 export function Loading() {
-  return (
-    <div aria-label="Loading store data" className="space-y-4">
-      <Skeleton className="h-12 w-64" />
-      <Skeleton className="h-32 w-full" />
-      <Skeleton className="h-60 w-full" />
-    </div>
-  );
+  return <LoadingScreen portal="store" title="Loading your store" description="Preparing your orders and delivery details." />;
 }
 export function Empty({ children }: { children: ReactNode }) {
   return (

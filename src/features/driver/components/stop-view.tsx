@@ -5,7 +5,7 @@ import { useQuery } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { ArrowLeft, Clock, MapPin, MapPinCheck, ParkingCircle, TriangleAlert } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Skeleton } from "@/components/ui/skeleton";
+import { LoadingScreen } from "@/components/loading-screen";
 import { getEvidenceBlob, OfflineStorageError, useNavigatorOnline, type PendingEvent } from "@/lib/offline";
 import { fetchTrip, fetchTripList, queueArrive } from "../client-actions";
 import { clock, STOP_STATE_LABEL } from "../format";
@@ -40,7 +40,7 @@ export function StopView({ stopId }: { stopId: string }) {
     <div className="mx-auto max-w-xl">
       <StatusStrip />
       {tripId === undefined || (tripId === null && looking) ? (
-        <Skeleton className="h-48 w-full rounded-2xl" />
+        <LoadingScreen portal="driver" title="Loading delivery details" />
       ) : tripId === null ? (
         <NoRouteDownloaded />
       ) : (
@@ -52,7 +52,7 @@ export function StopView({ stopId }: { stopId: string }) {
 
 function StopInTrip({ tripId, stopId }: { tripId: string; stopId: string }) {
   const { trip, refresh, revoked } = useTrip(tripId);
-  if (trip === undefined) return <Skeleton className="h-48 w-full rounded-2xl" />;
+  if (trip === undefined) return <LoadingScreen portal="driver" title="Loading delivery details" />;
   if (trip === null) return <NoRouteDownloaded />;
   const index = trip.stops.findIndex((s) => s.stopId === stopId);
   const stop = trip.stops[index];

@@ -1,4 +1,5 @@
 "use client";
+import { LoadingScreen } from "@/components/loading-screen";
 import Link from "next/link";
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
@@ -53,9 +54,7 @@ export function Planner({ id }: { id: string }) {
     );
   if (!query.data || !reference.data)
     return (
-      <p role="status" className="p-8">
-        Loading plan and fleet…
-      </p>
+      <LoadingScreen portal="dispatcher" title="Loading your plan" description="Preparing allocation decisions and fleet capacity." />
     );
   const plan = query.data;
   const ref = reference.data;

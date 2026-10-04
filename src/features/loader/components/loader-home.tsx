@@ -4,7 +4,7 @@ import { useState } from "react";
 import { toast } from "sonner";
 import { ChevronRight, Download, Snowflake, Truck } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Skeleton } from "@/components/ui/skeleton";
+import { LoadingScreen } from "@/components/loading-screen";
 import { useNavigatorOnline } from "@/lib/offline";
 import { cn } from "@/lib/utils";
 import { brandLabel } from "@/shared/dto/reference";
@@ -70,8 +70,7 @@ export function LoaderHome() {
 
       {stored === undefined || (stored === null && refresh.isPending) ? (
         <div className="space-y-3">
-          <Skeleton className="h-28 w-full rounded-2xl" />
-          <Skeleton className="h-28 w-full rounded-2xl" />
+          <LoadingScreen portal="loader" title="Loading your manifests" />
         </div>
       ) : items.length === 0 ? (
         <div className="rounded-2xl border border-dashed bg-card p-6 text-center" data-testid="no-trips">

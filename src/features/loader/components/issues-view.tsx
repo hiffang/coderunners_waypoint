@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Skeleton } from "@/components/ui/skeleton";
+import { LoadingScreen } from "@/components/loading-screen";
 import { cn } from "@/lib/utils";
 import { clock, dayLabel, ISSUE_STATUS_LABEL, ISSUE_TYPE_LABEL, SEVERITY_LABEL, TRIP_STATE_LABEL } from "../format";
 import { useIssueList } from "../hooks";
@@ -41,7 +41,7 @@ export function IssuesView() {
       </div>
 
       {stored === undefined || (stored === null && refresh.isPending) ? (
-        <Skeleton className="h-32 w-full rounded-2xl" />
+        <LoadingScreen portal="loader" title="Loading depot issues" />
       ) : shown.length === 0 ? (
         <div className="rounded-2xl border border-dashed bg-card p-6 text-center text-sm text-muted-foreground" data-testid="no-issues">
           {stored ? (showResolved ? "No issues in the last 7 days." : "No open issues.") : "Connect to the network to load issues."}

@@ -1,5 +1,6 @@
 "use client";
 import Link from "next/link";
+import { LoadingScreen } from "@/components/loading-screen";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { useForm } from "react-hook-form";
@@ -164,10 +165,7 @@ export function DispatcherPortal({
       </div>
       {error && <Failure error={error} retry={refresh} />}
       {!data && !error && (
-        <div
-          className="h-64 animate-pulse rounded-xl bg-card motion-reduce:animate-none"
-          aria-label="Loading dispatcher portal"
-        />
+        <LoadingScreen portal="dispatcher" title="Loading your depot" description="Preparing orders, fleet availability and delivery updates." />
       )}
       {data && (
         <>

@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
 import { CloudOff } from "lucide-react";
 import { Logo } from "@/components/shell/logo";
-import { Skeleton } from "@/components/ui/skeleton";
+import { LoadingScreen } from "@/components/loading-screen";
 import { getActiveAccount, useNavigatorOnline } from "@/lib/offline";
 import { DriverLink, DriverSessionProvider, useShellLocation } from "../session";
 import { DriverHome } from "./driver-home";
@@ -26,7 +26,7 @@ export function DriverShellApp() {
   if (path === null || account === undefined) {
     return (
       <ShellFrame>
-        <Skeleton className="h-40 w-full rounded-2xl" />
+        <LoadingScreen portal="driver" title="Opening your workspace" />
       </ShellFrame>
     );
   }

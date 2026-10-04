@@ -4,7 +4,7 @@ import { useState } from "react";
 import { toast } from "sonner";
 import { ChevronRight, Download, Truck } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Skeleton } from "@/components/ui/skeleton";
+import { LoadingScreen } from "@/components/loading-screen";
 import { OfflineStorageError, useNavigatorOnline, useOutbox } from "@/lib/offline";
 import { ApiClientError } from "@/shared/api";
 import { brandLabel } from "@/shared/dto/reference";
@@ -74,9 +74,9 @@ export function DriverHome() {
       <RefreshError error={refresh.error} />
 
       {stored === undefined ? (
-        <Skeleton className="h-28 w-full rounded-2xl" />
+        <LoadingScreen portal="driver" title="Loading your routes" />
       ) : !stored ? (
-        refresh.isFetching ? <Skeleton className="h-28 w-full rounded-2xl" /> : <NoRouteDownloaded />
+        refresh.isFetching ? <LoadingScreen portal="driver" title="Loading your routes" /> : <NoRouteDownloaded />
       ) : stored.data.items.length === 0 ? (
         <div className="rounded-2xl border border-dashed bg-card p-6 text-center text-sm text-muted-foreground">
           No routes are assigned to you in a published plan.
