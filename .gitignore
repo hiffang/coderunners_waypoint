@@ -46,3 +46,6 @@ next-env.d.ts
 /playwright-report/
 /test-results/
 !.env.example
+
+# Local seeded account credentials
+/seeded-account-credentials.txt
