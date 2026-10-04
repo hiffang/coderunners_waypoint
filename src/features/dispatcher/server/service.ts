@@ -51,16 +51,19 @@ export function depotScope(actor: SessionUser) {
   assertDepotScope(actor, actor.depotId ?? "");
   return actor.depotId!;
 }
-export async function calendar(
-  tx: Client,
-  date: string,
-): Promise<CalendarLookup> {
+function assertCalendarDate(date: string) {
   if (
     !/^\d{4}-\d{2}-\d{2}$/.test(date) ||
     !Number.isFinite(Date.parse(`${date}T00:00:00Z`)) ||
     new Date(`${date}T00:00:00Z`).toISOString().slice(0, 10) !== date
   )
     throw constraintError("Choose a valid calendar date");
+}
+export async function calendar(
+  tx: Client,
+  date: string,
+): Promise<CalendarLookup> {
+  assertCalendarDate(date);
   const rows = await tx.calendarDay.findMany({
     where: { date: { gte: addDays(date, -7), lte: addDays(date, 65) } },
   });
@@ -79,7 +82,7 @@ export async function loadPlan(tx: Client, actor: SessionUser, id: string) {
   return plan;
 }
 export async function queue(tx: Client, actor: SessionUser, date: string) {
-  await calendar(tx, date);
+  assertCalendarDate(date);
   return tx.order.findMany({
     where: {
       depotId: depotScope(actor),
@@ -96,20 +99,19 @@ export async function planningInput(
   plan: PlanRow,
 ): Promise<PlanningInput> {
   const week = isoWeekOf(plan.serviceDate);
-  const [queued, vehicles, lookup] = await Promise.all([
-    queue(tx, actor, plan.serviceDate),
-    tx.vehicle.findMany({
-      where: { depotId: plan.depotId },
-      include: {
-        driver: true,
-        fuelWeek: { where: week },
-        trips: {
-          where: { serviceDate: plan.serviceDate, planId: { not: plan.id } },
-        },
+  // Interactive transactions share one connection; await each query in turn.
+  const lookup = await calendar(tx, plan.serviceDate);
+  const queued = await queue(tx, actor, plan.serviceDate);
+  const vehicles = await tx.vehicle.findMany({
+    where: { depotId: plan.depotId },
+    include: {
+      driver: true,
+      fuelWeek: { where: week },
+      trips: {
+        where: { serviceDate: plan.serviceDate, planId: { not: plan.id } },
       },
-    }),
-    calendar(tx, plan.serviceDate),
-  ]);
+    },
+  });
   const rows = [
     ...new Map(
       [...queued, ...plan.decisions.map((d) => d.order)].map((o) => [o.id, o]),
@@ -189,6 +191,9 @@ export async function planDto(
   plan: PlanRow,
 ): Promise<PlanDto> {
   const input = await planningInput(tx, actor, plan);
+  return toPlanDto(plan, input);
+}
+function toPlanDto(plan: PlanRow, input: PlanningInput): PlanDto {
   const served = plan.decisions.filter((d) => d.decision === "SERVED").length;
   return {
     id: plan.id,
@@ -234,9 +239,10 @@ export async function planDto(
 }
 export async function planDetail(tx: Client, actor: SessionUser, id: string) {
   const plan = await loadPlan(tx, actor, id);
+  const input = await planningInput(tx, actor, plan);
   return {
-    ...(await planDto(tx, actor, plan)),
-    orders: (await planningInput(tx, actor, plan)).orders,
+    ...toPlanDto(plan, input),
+    orders: input.orders,
     manifests: plan.trips.map(toManifestDto),
   };
 }
