@@ -1,0 +1,62 @@
+# Plain `docker compose up` starts the complete local stack with demo data.
+# The defaults below are LOCAL DEMO ONLY. Production must set real secrets
+# (AUTH_SECRET, DEMO_PASSWORD or DEMO_SEED=false, DB credentials) via env/.env.
+name: waypoint
+
+services:
+  db:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-waypoint}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-waypoint}
+      POSTGRES_DB: ${POSTGRES_DB:-waypoint}
+    volumes:
+      - db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+    ports:
+      - "127.0.0.1:${DB_HOST_PORT:-5432}:5432"
+
+  migrate-seed:
+    build:
+      context: .
+      target: migrate-seed
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-waypoint}:${POSTGRES_PASSWORD:-waypoint}@db:5432/${POSTGRES_DB:-waypoint}
+      APP_TIMEZONE: ${APP_TIMEZONE:-Asia/Colombo}
+      DEMO_SEED: ${DEMO_SEED:-true}
+      DEMO_PASSWORD: ${DEMO_PASSWORD:-Waypoint#2026}
+      DEMO_SERVICE_DATE: ${DEMO_SERVICE_DATE:-2026-09-26}
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: "no"
+
+  app:
+    build:
+      context: .
+      target: app
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-waypoint}:${POSTGRES_PASSWORD:-waypoint}@db:5432/${POSTGRES_DB:-waypoint}
+      AUTH_SECRET: ${AUTH_SECRET:-local-demo-only-secret-change-me-in-production-0000}
+      AUTH_URL: ${AUTH_URL:-http://localhost:3000}
+      AUTH_TRUST_HOST: "true"
+      APP_TIMEZONE: ${APP_TIMEZONE:-Asia/Colombo}
+      PRIVATE_UPLOAD_DIR: /data/uploads
+      DEMO_SERVICE_DATE: ${DEMO_SERVICE_DATE:-2026-09-26}
+      DEMO_CLOCK: ${DEMO_CLOCK:-}
+    volumes:
+      - uploads:/data/uploads
+    ports:
+      - "3000:3000"
+    depends_on:
+      migrate-seed:
+        condition: service_completed_successfully
+    restart: unless-stopped
+
+volumes:
+  db-data:
+  uploads:

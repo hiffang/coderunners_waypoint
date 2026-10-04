@@ -1,0 +1,660 @@
+// Waypoint shared schema, contract version 1. Owned by the lead (Member 1).
+// Source of meaning: docs/TEAM_CONTRACT.md. Portal members must not edit this
+// file directly; request contract changes through the lead.
+//
+// Conventions
+// - Imported master IDs keep the organizer values (OUT001, VEH014).
+// - Business dates (service/requested/eligible dates) are "YYYY-MM-DD" strings
+//   in Asia/Colombo; instants are timestamptz. Opening/closing times are local
+//   "HH:mm" strings materialized per service date on the server.
+// - Weights/volumes/fuel are Decimal; convert with @/server/decimal at the DTO boundary.
+// - Mutable aggregates carry `version` (starts at 1) for optimistic concurrency.
+//   Child writes bump the parent version.
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ---------------------------------------------------------------- enums
+
+enum Role {
+  DISPATCHER
+  LOADER
+  DRIVER
+  STORE
+}
+
+enum Brand {
+  FRESH
+  STYLE
+  TECH
+}
+
+enum VehicleType {
+  TRUCK
+  VAN
+}
+
+enum VehicleStatus {
+  AVAILABLE
+  IN_WORKSHOP
+}
+
+enum DockType {
+  STREET
+  REAR_DOCK
+  MALL_BAY
+}
+
+enum ParkingConstraint {
+  NORMAL
+  VAN_ONLY
+  MALL_DOCK
+}
+
+enum Temp {
+  AMBIENT
+  CHILLED
+  FROZEN
+}
+
+enum OrderStatus {
+  DRAFT
+  CONFIRMED
+  DEFERRED
+  ALLOCATED
+  DELIVERED
+  PARTIALLY_DELIVERED
+  RECEIVED
+  CANCELLED
+}
+
+enum PlanStatus {
+  DRAFT
+  PUBLISHED
+  COMPLETED
+}
+
+enum DecisionType {
+  SERVED
+  DEFERRED
+}
+
+enum DeferralReason {
+  CAPACITY_WEIGHT
+  CAPACITY_VOLUME
+  NO_REFRIGERATED_VEHICLE
+  ACCESS_VAN_ONLY
+  ACCESS_MALL_WINDOW
+  DELIVERY_WINDOW
+  FUEL_QUOTA
+  TRIP_LIMIT
+  VEHICLE_UNAVAILABLE
+  DELIVERY_FAILED
+  OTHER
+}
+
+enum TripState {
+  PLANNED
+  LOADING
+  READY
+  IN_TRANSIT
+  COMPLETED
+}
+
+enum StopState {
+  PENDING
+  ARRIVED
+  DELIVERED
+  PARTIAL
+  FAILED
+}
+
+enum IssueType {
+  SHORTFALL
+  DAMAGE
+  DELAY
+  ACCESS
+  RECEIPT
+  OTHER
+}
+
+enum IssueSeverity {
+  LOW
+  MEDIUM
+  HIGH
+}
+
+enum IssueStatus {
+  OPEN
+  ACKNOWLEDGED
+  RESOLVED
+}
+
+enum DeliveryOutcome {
+  DELIVERED
+  PARTIAL
+  FAILED
+}
+
+enum ReceiptStatus {
+  CONFIRMED
+  DISPUTED
+}
+
+enum FuelReservationState {
+  RESERVED
+  CONSUMED
+  RELEASED
+}
+
+// ---------------------------------------------------------------- identity & audit
+
+model User {
+  id           String   @id @default(cuid())
+  username     String   @unique
+  displayName  String
+  passwordHash String
+  role         Role
+  // Scope. LOADER/DISPATCHER: depotId. STORE: outletId (+ its depot).
+  // DRIVER: vehicleId (+ its depot); trips are authorized via Trip.assignedDriverId.
+  depotId      String?
+  depot        Depot?   @relation(fields: [depotId], references: [id])
+  outletId     String?
+  outlet       Outlet?  @relation(fields: [outletId], references: [id])
+  vehicleId    String?  @unique
+  vehicle      Vehicle? @relation(fields: [vehicleId], references: [id])
+  active       Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  auditLogs        AuditLog[]
+  idempotencyKeys  IdempotencyKey[]
+  ordersCreated    Order[]            @relation("OrderCreatedBy")
+  tripsAssigned    Trip[]             @relation("TripDriver")
+  loadingChecks    LoadingCheck[]
+  issuesReported   Issue[]            @relation("IssueReporter")
+  issuesResolved   Issue[]            @relation("IssueResolver")
+  proofsRecorded   ProofOfDelivery[]
+  receipts         Receipt[]
+  attachments      Attachment[]
+  plansCreated     Plan[]             @relation("PlanCreatedBy")
+  plansPublished   Plan[]             @relation("PlanPublishedBy")
+}
+
+// Append-only. Written by runMutation()/writeAudit() in the same transaction as the change.
+model AuditLog {
+  id           String    @id @default(cuid())
+  actorId      String
+  actor        User      @relation(fields: [actorId], references: [id])
+  action       String
+  entityType   String
+  entityId     String
+  before       Json?
+  after        Json?
+  clientAt     DateTime? // device time for offline-replayed events (informational)
+  planRevision Int?
+  createdAt    DateTime  @default(now()) // authoritative server time
+
+  @@index([entityType, entityId])
+  @@index([actorId, createdAt])
+}
+
+// One row per client-supplied Idempotency-Key. A retried mutation with the
+// same key returns the stored response instead of applying twice.
+model IdempotencyKey {
+  key          String   @id
+  actorId      String
+  actor        User     @relation(fields: [actorId], references: [id])
+  route        String
+  requestHash  String
+  statusCode   Int
+  responseBody Json
+  createdAt    DateTime @default(now())
+
+  @@index([actorId, createdAt])
+}
+
+// ---------------------------------------------------------------- master data (data/general/*.csv)
+
+model Depot {
+  id        String   @id @default(cuid())
+  name      String   @unique
+  createdAt DateTime @default(now())
+
+  outlets  Outlet[]
+  vehicles Vehicle[]
+  users    User[]
+  orders   Order[]
+  plans    Plan[]
+  trips    Trip[]
+}
+
+model Outlet {
+  id                String            @id // supplied outlet_id, e.g. OUT001
+  brand             Brand
+  district          String
+  depotId           String
+  depot             Depot             @relation(fields: [depotId], references: [id])
+  dockType          DockType
+  parkingConstraint ParkingConstraint
+  windowOpen        String // local HH:mm
+  windowClose       String // local HH:mm
+  mallWindowOpen    String? // local HH:mm, mall outlets only
+  mallWindowClose   String?
+  raw               Json // original CSV row
+  createdAt         DateTime          @default(now())
+  updatedAt         DateTime          @updatedAt
+
+  users  User[]
+  orders Order[]
+  stops  Stop[]
+
+  @@index([depotId])
+}
+
+model Vehicle {
+  id                    String        @id // supplied vehicle_id, e.g. VEH014
+  depotId               String
+  depot                 Depot         @relation(fields: [depotId], references: [id])
+  type                  VehicleType
+  refrigerated          Boolean
+  weightCapKg           Decimal       @db.Decimal(10, 2)
+  volumeCapM3           Decimal       @db.Decimal(10, 3)
+  fuelType              String
+  kmPerLiter            Decimal       @db.Decimal(8, 3) // as supplied
+  fuelLitersPerKm       Decimal       @db.Decimal(10, 6) // 1 / kmPerLiter, converted once at import
+  weeklyFuelQuotaLiters Decimal       @db.Decimal(10, 2)
+  status                VehicleStatus @default(AVAILABLE)
+  raw                   Json
+  createdAt             DateTime      @default(now())
+  updatedAt             DateTime      @updatedAt
+
+  driver   User?
+  trips    Trip[]
+  fuelWeek VehicleWeekFuel[]
+
+  @@index([depotId])
+}
+
+// Supplied calendar rows only. Dates outside the supplied range are resolved by
+// @/server/calendar with the documented Mon-Sat fallback and flagged as derived.
+model CalendarDay {
+  date         String  @id // YYYY-MM-DD
+  dow          Int // 0 = Monday (as supplied)
+  isWeekend    Boolean
+  isoYear      Int
+  isoWeek      Int
+  isPayday     Boolean
+  festival     String?
+  festivalRamp Decimal @db.Decimal(4, 2)
+  isHoliday    Boolean
+  monsoon      Boolean
+  isOperating  Boolean
+}
+
+// ---------------------------------------------------------------- orders (Member 4 writes)
+
+model Order {
+  id                  String      @id @default(uuid())
+  orderRef            String      @unique // immutable, human-readable
+  outletId            String
+  outlet              Outlet      @relation(fields: [outletId], references: [id])
+  depotId             String // copied from outlet at submission, for depot-scoped queries
+  depot               Depot       @relation(fields: [depotId], references: [id])
+  createdById         String
+  createdBy           User        @relation("OrderCreatedBy", fields: [createdById], references: [id])
+  brand               Brand // from outlet, never from the client
+  temp                Temp
+  requestedDate       String // what the store asked for
+  eligibleServiceDate String // earliest run it may be served (cutoff/calendar adjusted, moved on deferral)
+  submittedAt         DateTime? // server time; null only for DRAFT
+  totalUnits          Int
+  totalWeightKg       Decimal     @db.Decimal(10, 2)
+  totalVolumeM3       Decimal     @db.Decimal(10, 3)
+  status              OrderStatus @default(CONFIRMED)
+  cancelledAt         DateTime?
+  cancelReason        String?
+  // Optional linked replacement for undelivered units of a partial delivery.
+  followUpOfId        String?
+  followUpOf          Order?      @relation("OrderFollowUp", fields: [followUpOfId], references: [id])
+  followUps           Order[]     @relation("OrderFollowUp")
+  version             Int         @default(1)
+  createdAt           DateTime    @default(now())
+  updatedAt           DateTime    @updatedAt
+
+  lines      OrderLine[]
+  decisions  AllocationDecision[]
+  stopOrders StopOrder[]
+  issues     Issue[]
+  receipt    Receipt?
+
+  @@index([depotId, eligibleServiceDate, status])
+  @@index([outletId, createdAt])
+}
+
+model OrderLine {
+  id           String  @id @default(uuid())
+  orderId      String
+  order        Order   @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  lineNo       Int
+  description  String
+  orderedUnits Int
+  unitWeightKg Decimal @db.Decimal(10, 3)
+  unitVolumeM3 Decimal @db.Decimal(10, 4)
+
+  loadingChecks   LoadingCheck[]
+  deliveryOutcome DeliveryLineOutcome[]
+  receiptLines    ReceiptLine[]
+
+  @@unique([orderId, lineNo])
+}
+
+// ---------------------------------------------------------------- planning (Member 1 writes)
+
+// One plan per depot and service date. `revision` counts publications: the
+// first publish sets revision 1; edits to a published plan republish as
+// revision n+1 and stamp Trip.planRevision on trips that changed.
+model Plan {
+  id            String     @id @default(uuid())
+  depotId       String
+  depot         Depot      @relation(fields: [depotId], references: [id])
+  serviceDate   String
+  status        PlanStatus @default(DRAFT)
+  revision      Int        @default(0)
+  publishedAt   DateTime?
+  publishedById String?
+  publishedBy   User?      @relation("PlanPublishedBy", fields: [publishedById], references: [id])
+  createdById   String
+  createdBy     User       @relation("PlanCreatedBy", fields: [createdById], references: [id])
+  version       Int        @default(1)
+  createdAt     DateTime   @default(now())
+  updatedAt     DateTime   @updatedAt
+
+  decisions AllocationDecision[]
+  trips     Trip[]
+
+  @@unique([depotId, serviceDate])
+}
+
+// Exactly one decision per (plan, order). Deferral history = distinct
+// published plans (service days) with a DEFERRED decision for the order.
+model AllocationDecision {
+  id               String          @id @default(uuid())
+  planId           String
+  plan             Plan            @relation(fields: [planId], references: [id], onDelete: Cascade)
+  orderId          String
+  order            Order           @relation(fields: [orderId], references: [id])
+  decision         DecisionType
+  tripId           String?
+  trip             Trip?           @relation(fields: [tripId], references: [id])
+  stopId           String?
+  stop             Stop?           @relation(fields: [stopId], references: [id])
+  reasonCode       DeferralReason?
+  reasonText       String?
+  nextEligibleDate String?
+  priorityNote     String? // explanation of the priority tier that produced this decision
+  createdAt        DateTime        @default(now())
+  updatedAt        DateTime        @updatedAt
+
+  @@unique([planId, orderId])
+  @@index([orderId])
+}
+
+model Trip {
+  id                 String    @id @default(uuid())
+  planId             String
+  plan               Plan      @relation(fields: [planId], references: [id], onDelete: Cascade)
+  depotId            String
+  depot              Depot     @relation(fields: [depotId], references: [id])
+  serviceDate        String
+  vehicleId          String
+  vehicle            Vehicle   @relation(fields: [vehicleId], references: [id])
+  assignedDriverId   String?
+  assignedDriver     User?     @relation("TripDriver", fields: [assignedDriverId], references: [id])
+  tripNumber         Int // 1 or 2
+  brand              Brand // MVP simplification: single-brand trips
+  district           String // MVP simplification: single-district trips
+  plannedDepartureAt DateTime
+  plannedReturnAt    DateTime
+  distanceKm         Decimal   @db.Decimal(10, 2) // round trip incl. return to depot
+  reservedFuelLiters Decimal   @db.Decimal(10, 2)
+  state              TripState @default(PLANNED)
+  planRevision       Int
+  loadingStartedAt   DateTime?
+  readyAt            DateTime?
+  departedAt         DateTime?
+  returnedAt         DateTime?
+  version            Int       @default(1)
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+
+  stops           Stop[]
+  decisions       AllocationDecision[]
+  loadingChecks   LoadingCheck[]
+  issues          Issue[]
+  fuelReservation TripFuelReservation?
+
+  @@unique([vehicleId, serviceDate, tripNumber])
+  @@index([planId])
+  @@index([assignedDriverId, serviceDate])
+  @@index([depotId, serviceDate])
+}
+
+model Stop {
+  id                String    @id @default(uuid())
+  tripId            String
+  trip              Trip      @relation(fields: [tripId], references: [id], onDelete: Cascade)
+  outletId          String
+  outlet            Outlet    @relation(fields: [outletId], references: [id])
+  sequence          Int // 1-based delivery order
+  plannedArrivalAt  DateTime
+  etaAt             DateTime?
+  plannedServiceMin Int
+  state             StopState @default(PENDING)
+  actualArrivalAt   DateTime?
+  completedAt       DateTime?
+  version           Int       @default(1)
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  orders       StopOrder[]
+  decisions    AllocationDecision[]
+  issues       Issue[]
+  proof        ProofOfDelivery?
+  lineOutcomes DeliveryLineOutcome[]
+
+  @@unique([tripId, sequence])
+}
+
+// Several distinct orders (e.g. Fresh ambient + chilled) may share one stop.
+model StopOrder {
+  stopId  String
+  stop    Stop   @relation(fields: [stopId], references: [id], onDelete: Cascade)
+  orderId String
+  order   Order  @relation(fields: [orderId], references: [id])
+
+  @@id([stopId, orderId])
+  @@index([orderId])
+}
+
+// ---------------------------------------------------------------- loading (Member 2 writes)
+
+model LoadingCheck {
+  id            String    @id @default(uuid())
+  tripId        String
+  trip          Trip      @relation(fields: [tripId], references: [id], onDelete: Cascade)
+  orderLineId   String
+  orderLine     OrderLine @relation(fields: [orderLineId], references: [id])
+  expectedUnits Int
+  loadedUnits   Int
+  damageUnits   Int
+  note          String?
+  planRevision  Int // revision the check was made against
+  checkedById   String
+  checkedBy     User      @relation(fields: [checkedById], references: [id])
+  checkedAt     DateTime  @default(now())
+
+  @@unique([tripId, orderLineId])
+}
+
+// ---------------------------------------------------------------- issues (all roles)
+
+model Issue {
+  id             String        @id @default(uuid())
+  type           IssueType
+  severity       IssueSeverity
+  blocking       Boolean       @default(false) // unresolved blocking issues stop READY/departure
+  orderId        String?
+  order          Order?        @relation(fields: [orderId], references: [id])
+  tripId         String?
+  trip           Trip?         @relation(fields: [tripId], references: [id])
+  stopId         String?
+  stop           Stop?         @relation(fields: [stopId], references: [id])
+  orderLineId    String?
+  reporterId     String
+  reporter       User          @relation("IssueReporter", fields: [reporterId], references: [id])
+  reporterRole   Role
+  text           String
+  status         IssueStatus   @default(OPEN)
+  resolution     String?
+  resolvedById   String?
+  resolvedBy     User?         @relation("IssueResolver", fields: [resolvedById], references: [id])
+  acknowledgedAt DateTime?
+  resolvedAt     DateTime?
+  clientAt       DateTime?
+  version        Int           @default(1)
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+
+  attachments Attachment[]
+
+  @@index([tripId, status])
+  @@index([orderId])
+  @@index([status, createdAt])
+}
+
+// ---------------------------------------------------------------- delivery (Member 3 writes)
+
+model ProofOfDelivery {
+  id            String          @id @default(uuid())
+  stopId        String          @unique
+  stop          Stop            @relation(fields: [stopId], references: [id], onDelete: Cascade)
+  outcome       DeliveryOutcome
+  recipientName String?
+  note          String?
+  failureReason String? // required when outcome = FAILED
+  capturedAt    DateTime // device time (informational)
+  submittedAt   DateTime        @default(now()) // server time (authoritative)
+  recordedById  String
+  recordedBy    User            @relation(fields: [recordedById], references: [id])
+
+  attachments Attachment[]
+}
+
+model DeliveryLineOutcome {
+  stopId              String
+  stop                Stop      @relation(fields: [stopId], references: [id], onDelete: Cascade)
+  orderLineId         String
+  orderLine           OrderLine @relation(fields: [orderLineId], references: [id])
+  loadedUnitsSnapshot Int
+  deliveredUnits      Int // <= loadedUnitsSnapshot
+  damagedUnits        Int // <= deliveredUnits
+  createdAt           DateTime  @default(now())
+
+  @@id([stopId, orderLineId])
+  @@index([orderLineId])
+}
+
+// ---------------------------------------------------------------- receipt (Member 4 writes)
+
+model Receipt {
+  id          String        @id @default(uuid())
+  orderId     String        @unique
+  order       Order         @relation(fields: [orderId], references: [id])
+  storeUserId String
+  storeUser   User          @relation(fields: [storeUserId], references: [id])
+  receivedAt  DateTime      @default(now())
+  note        String?
+  status      ReceiptStatus
+  version     Int           @default(1)
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+
+  lines       ReceiptLine[]
+  attachments Attachment[]
+}
+
+model ReceiptLine {
+  receiptId     String
+  receipt       Receipt   @relation(fields: [receiptId], references: [id], onDelete: Cascade)
+  orderLineId   String
+  orderLine     OrderLine @relation(fields: [orderLineId], references: [id])
+  receivedUnits Int
+  damageUnits   Int
+
+  @@id([receiptId, orderLineId])
+}
+
+// ---------------------------------------------------------------- files (lead-owned API)
+
+// Uploaded first (provisional, no owner link), then linked by the business
+// mutation. Unlinked rows older than 24h are orphans and may be cleaned up.
+model Attachment {
+  id           String           @id @default(uuid())
+  uploadedById String
+  uploadedBy   User             @relation(fields: [uploadedById], references: [id])
+  clientFileId String // client-generated, makes upload retries idempotent
+  contentType  String
+  size         Int
+  storageKey   String           @unique // private; never exposed in DTOs
+  proofId      String?
+  proof        ProofOfDelivery? @relation(fields: [proofId], references: [id])
+  issueId      String?
+  issue        Issue?           @relation(fields: [issueId], references: [id])
+  receiptId    String?
+  receipt      Receipt?         @relation(fields: [receiptId], references: [id])
+  linkedAt     DateTime?
+  createdAt    DateTime         @default(now())
+
+  @@unique([uploadedById, clientFileId])
+}
+
+// ---------------------------------------------------------------- fuel ledger
+
+// Weekly key: vehicle + ISO year/week in Asia/Colombo.
+// Invariant: reservedLiters + consumedLiters <= quotaLiters (+ tolerance).
+model VehicleWeekFuel {
+  id             String   @id @default(uuid())
+  vehicleId      String
+  vehicle        Vehicle  @relation(fields: [vehicleId], references: [id])
+  isoYear        Int
+  isoWeek        Int
+  quotaLiters    Decimal  @db.Decimal(10, 2)
+  reservedLiters Decimal  @default(0) @db.Decimal(10, 2)
+  consumedLiters Decimal  @default(0) @db.Decimal(10, 2)
+  version        Int      @default(1)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  reservations TripFuelReservation[]
+
+  @@unique([vehicleId, isoYear, isoWeek])
+}
+
+model TripFuelReservation {
+  id         String               @id @default(uuid())
+  tripId     String               @unique
+  trip       Trip                 @relation(fields: [tripId], references: [id], onDelete: Cascade)
+  fuelWeekId String
+  fuelWeek   VehicleWeekFuel      @relation(fields: [fuelWeekId], references: [id])
+  liters     Decimal              @db.Decimal(10, 2)
+  state      FuelReservationState @default(RESERVED)
+  createdAt  DateTime             @default(now())
+  updatedAt  DateTime             @updatedAt
+}

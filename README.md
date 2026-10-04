@@ -1,36 +1,67 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Waypoint — CodeRunners
 
-## Getting Started
+Distribution operations app with four role portals: **dispatcher**, **loader**, **driver** (offline-capable) and **store manager**.
 
-First, run the development server:
+> Status: foundation (`setup-v1`). Portals are scaffolded and authenticated; business flows are being built per member.
+
+## Quick start (Docker)
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+docker compose up --build
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Starts PostgreSQL 17, applies committed migrations, runs the idempotent seed, then serves the app on http://localhost:3000.
+Compose defaults are for local demo only — see [Production configuration](#production-configuration).
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+| Role | Username | Password |
+|---|---|---|
+| Dispatcher | `dispatcher` | `Waypoint#2026` |
+| Loader | `loader` | `Waypoint#2026` |
+| Driver | `driver` | `Waypoint#2026` |
+| Store manager | `store` | `Waypoint#2026` |
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+Scopes, extra accounts (Kandy, one driver per vehicle) and the seeded demo scenario: [docs/CONTRACT_V1.md](docs/CONTRACT_V1.md#seeded-data).
 
-## Learn More
+## Local development
 
-To learn more about Next.js, take a look at the following resources:
+Requires Node 24+ and Docker.
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+```bash
+npm ci
+cp .env.example .env          # set AUTH_SECRET
+docker compose up -d db
+npm run db:deploy && npm run db:seed
+npm run dev
+```
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+If host port 5432 is taken, set `DB_HOST_PORT=5434` in `.env` and point `DATABASE_URL` at that port.
 
-## Deploy on Vercel
+| Script | Purpose |
+|---|---|
+| `npm run lint` / `typecheck` / `build` | Static checks and production build |
+| `npm test` | Unit tests (Vitest) |
+| `npm run test:integration` | DB-backed tests against `DATABASE_URL` |
+| `npm run test:e2e` | Playwright (desktop + phone) against `E2E_BASE_URL` |
+| `npm run db:migrate` | Create a new migration (lead only) |
+| `npm run db:deploy` / `db:seed` | Apply migrations / idempotent seed |
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+## Production configuration
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+Set real values for `AUTH_SECRET`, `AUTH_URL`, database credentials and either a strong `DEMO_PASSWORD` or `DEMO_SEED=false`. Leave `DEMO_CLOCK` empty. Re-running the seed never resets existing accounts or completed deliveries.
+
+## Project layout
+
+```
+prisma/                 schema, migrations, seed (lead-owned)
+src/app/<portal>/       portal pages (dispatcher | loader | driver | store)
+src/app/api/<portal>/   portal route handlers
+src/features/<portal>/  portal components, hooks, services
+src/server/             db, http helpers, auth guards, mutation/idempotency, time, storage
+src/shared/             DTOs, API envelope, roles (client-safe)
+docs/                   TEAM_CONTRACT (meaning), CONTRACT_V1 (implementation + deviations), setup guide, designs
+data/general/           organizer CSV master data
+```
+
+## Judge walkthrough
+
+_To be completed with concrete IDs once flows land (see `docs/SETUP_AND_HANDOFF.md`)._
