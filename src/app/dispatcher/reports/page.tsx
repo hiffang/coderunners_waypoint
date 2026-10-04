@@ -1,4 +1,4 @@
-﻿import { DispatcherPortal } from "@/features/dispatcher/components/portal";
+import { DispatcherPortal } from "@/features/dispatcher/components/portal";
 import { localDate } from "@/server/time";
 export default async function Page({
   searchParams,
@@ -8,7 +8,7 @@ export default async function Page({
   const { serviceDate } = await searchParams;
   return (
     <DispatcherPortal
-      view="overview"
+      view="reports"
       initialDate={
         serviceDate && /^\d{4}-\d{2}-\d{2}$/.test(serviceDate)
           ? serviceDate

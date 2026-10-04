@@ -1,8 +1,23 @@
-// Contract stub (docs/TEAM_CONTRACT.md section 6). Owner replaces with the real handler.
-import { handle, notImplemented } from "@/server/http";
+﻿import { handle, ok, assertSameOrigin, parseJson } from "@/server/http";
 import { requireRole } from "@/server/auth/guards";
-
-export const POST = handle(async () => {
-  await requireRole("DISPATCHER");
-  return notImplemented("POST /api/dispatcher/issues/[id]/resolve");
-});
+import { runMutation } from "@/server/mutation";
+export const runtime = "nodejs";
+import { resolveIssueSchema } from "@/shared/dto/issue";
+import { resolveIssue } from "@/features/dispatcher/server/service";
+export const POST = handle(
+  async (req, context: { params: Promise<{ id: string }> }) => {
+    assertSameOrigin(req);
+    const actor = await requireRole("DISPATCHER");
+    const { id } = await context.params;
+    const body = await parseJson(req, resolveIssueSchema);
+    const result = await runMutation({
+      req,
+      actor,
+      route: `POST /dispatcher/issues/${id}/resolve`,
+      body,
+      requireIdempotencyKey: true,
+      fn: (ctx) => resolveIssue(ctx, id, body),
+    });
+    return ok(result.data);
+  },
+);

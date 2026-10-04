@@ -6,5 +6,6 @@ export const dispatcherNav: NavItem[] = [
   { href: "/dispatcher/loading-bays", label: "Loading bays" },
   { href: "/dispatcher/orders", label: "Orders" },
   { href: "/dispatcher/deferrals", label: "Deferrals" },
+  { href: "/dispatcher/monitor", label: "Monitor" },
   { href: "/dispatcher/reports", label: "Reports" },
 ];

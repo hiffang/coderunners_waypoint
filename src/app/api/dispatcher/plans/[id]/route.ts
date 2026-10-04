@@ -1,8 +1,15 @@
-// Contract stub (docs/TEAM_CONTRACT.md section 6). Owner replaces with the real handler.
-import { handle, notImplemented } from "@/server/http";
+﻿import { handle, ok } from "@/server/http";
 import { requireRole } from "@/server/auth/guards";
-
-export const GET = handle(async () => {
-  await requireRole("DISPATCHER");
-  return notImplemented("GET /api/dispatcher/plans/[id]");
-});
+import { db } from "@/server/db";
+import { planDetail } from "@/features/dispatcher/server/service";
+export const runtime = "nodejs";
+export const GET = handle(
+  async (_req, context: { params: Promise<{ id: string }> }) =>
+    ok(
+      await planDetail(
+        db,
+        await requireRole("DISPATCHER"),
+        (await context.params).id,
+      ),
+    ),
+);
